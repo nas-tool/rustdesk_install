@@ -1,5 +1,8 @@
 name: build-linux-matrix
 
+permissions:
+  contents: write
+
 on:
   push:
     branches:
