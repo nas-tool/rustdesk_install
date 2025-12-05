@@ -77,13 +77,15 @@ jobs:
           echo "EVENT=${{ github.event_name }}" >> $GITHUB_ENV
           echo "REF_NAME=${{ github.ref_name }}" >> $GITHUB_ENV
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "TAG=latest" >> $GITHUB_ENV
+            echo "TAG=main-${{ github.sha }}" >> $GITHUB_ENV
             echo "TITLE=Latest release" >> $GITHUB_ENV
             echo "NOTES=Auto release for latest (main)" >> $GITHUB_ENV
+            echo "IS_MAIN=1" >> $GITHUB_ENV
           else
             echo "TAG=${{ github.ref_name }}" >> $GITHUB_ENV
             echo "TITLE=${{ github.ref_name }}" >> $GITHUB_ENV
             echo "NOTES=Auto release for ${{ github.ref_name }}" >> $GITHUB_ENV
+            echo "IS_MAIN=0" >> $GITHUB_ENV
           fi
 
       - name: Download all artifacts
@@ -93,24 +95,20 @@ jobs:
           merge-multiple: true
           path: dist
 
-      - name: Create or update release (recreate latest to refresh timestamp)
+      - name: Create or update release (create draft then publish)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ env.TAG }}
           TITLE: ${{ env.TITLE }}
           NOTES: ${{ env.NOTES }}
+          IS_MAIN: ${{ env.IS_MAIN }}
         run: |
-          if [ "$TAG" = "latest" ]; then
-            gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1 && gh release delete "$TAG" --repo "${{ github.repository }}" -y || true
-            gh release create "$TAG" --title "$TITLE" --notes "$NOTES" --target ${{ github.sha }} --repo "${{ github.repository }}"
+          gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1 && exists=1 || exists=0
+          if [ "$exists" = "1" ]; then
+            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" --repo "${{ github.repository }}" --draft=true
           else
-            gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1 && exists=1 || exists=0
-            if [ "$exists" = "1" ]; then
-              gh release edit "$TAG" --draft=false --title "$TITLE" --notes "$NOTES" --repo "${{ github.repository }}"
-            else
-              gh release create "$TAG" --title "$TITLE" --notes "$NOTES" --repo "${{ github.repository }}"
-            fi
+            gh release create "$TAG" --title "$TITLE" --notes "$NOTES" --target ${{ github.sha }} --repo "${{ github.repository }}" --draft
           fi
 
       - name: Upload assets (overwrite if exists)
@@ -121,3 +119,12 @@ jobs:
         run: |
           ls -lah dist
           gh release upload "$TAG" dist/* --clobber --repo "${{ github.repository }}"
+
+      - name: Publish release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ env.TAG }}
+          IS_MAIN: ${{ env.IS_MAIN }}
+        run: |
+          gh release edit "$TAG" --draft=false --repo "${{ github.repository }}"
