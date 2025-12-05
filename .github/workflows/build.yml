@@ -65,6 +65,9 @@ jobs:
       group: release-${{ github.ref }}
       cancel-in-progress: true
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Set tag variables (tag push uses ref_name; main uses latest)
         run: |
           echo "REF=${{ github.ref }}" >> $GITHUB_ENV
@@ -90,26 +93,28 @@ jobs:
       - name: Create or update release (recreate latest to refresh timestamp)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ env.TAG }}
           TITLE: ${{ env.TITLE }}
           NOTES: ${{ env.NOTES }}
         run: |
           if [ "$TAG" = "latest" ]; then
-            gh release view "$TAG" >/dev/null 2>&1 && gh release delete "$TAG" -y || true
-            gh release create "$TAG" --title "$TITLE" --notes "$NOTES" --target ${{ github.sha }}
+            gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1 && gh release delete "$TAG" --repo "${{ github.repository }}" -y || true
+            gh release create "$TAG" --title "$TITLE" --notes "$NOTES" --target ${{ github.sha }} --repo "${{ github.repository }}"
           else
-            gh release view "$TAG" >/dev/null 2>&1 && exists=1 || exists=0
+            gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1 && exists=1 || exists=0
             if [ "$exists" = "1" ]; then
-              gh release edit "$TAG" --draft=false --title "$TITLE" --notes "$NOTES"
+              gh release edit "$TAG" --draft=false --title "$TITLE" --notes "$NOTES" --repo "${{ github.repository }}"
             else
-              gh release create "$TAG" --title "$TITLE" --notes "$NOTES"
+              gh release create "$TAG" --title "$TITLE" --notes "$NOTES" --repo "${{ github.repository }}"
             fi
           fi
 
       - name: Upload assets (overwrite if exists)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ env.TAG }}
         run: |
           ls -lah dist
-          gh release upload "$TAG" dist/* --clobber
+          gh release upload "$TAG" dist/* --clobber --repo "${{ github.repository }}"
