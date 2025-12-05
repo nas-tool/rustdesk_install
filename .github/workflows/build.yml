@@ -2,10 +2,10 @@ name: build-linux-matrix
 
 on:
   push:
+    tags:
+      - '*'
   pull_request:
   workflow_dispatch:
-  tags:
-    - '*'
 
 jobs:
   build:
