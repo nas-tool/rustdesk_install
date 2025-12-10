@@ -43,18 +43,18 @@ func RelayUnit(installDir, logDir, hbrPort string) string {
 }
 
 func EnableAndStart() error {
-    if err := util.RunCommand("systemctl", "daemon-reload"); err != nil {
-        return err
-    }
-    return util.RunCommand("systemctl", "enable", "--now", "rustdesksignal.service", "rustdeskrelay.service")
+	if err := util.RunCommandSilent("systemctl", "daemon-reload"); err != nil {
+		return err
+	}
+	return util.RunCommandSilent("systemctl", "enable", "--now", "rustdesksignal.service", "rustdeskrelay.service")
 }
 
 func DisableAndStop() error {
-    return util.RunCommand("systemctl", "disable", "--now", "rustdesksignal.service", "rustdeskrelay.service")
+	return util.RunCommandSilent("systemctl", "disable", "--now", "rustdesksignal.service", "rustdeskrelay.service")
 }
 
 func RemoveUnits(systemdDir string) error {
-    _ = os.Remove(filepath.Join(systemdDir, "rustdesksignal.service"))
-    _ = os.Remove(filepath.Join(systemdDir, "rustdeskrelay.service"))
-    return util.RunCommand("systemctl", "daemon-reload")
+	_ = os.Remove(filepath.Join(systemdDir, "rustdesksignal.service"))
+	_ = os.Remove(filepath.Join(systemdDir, "rustdeskrelay.service"))
+	return util.RunCommandSilent("systemctl", "daemon-reload")
 }
