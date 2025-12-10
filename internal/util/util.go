@@ -44,7 +44,6 @@ func StartDetached(bin string, args []string, logfile string, workdir string) er
 	cmd.Stdout = lf
 	cmd.Stderr = lf
 	cmd.Dir = workdir
-	configureSysProcAttr(cmd)
 	return cmd.Start()
 }
 
