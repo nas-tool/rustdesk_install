@@ -1,0 +1,130 @@
+name: build-linux-matrix
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: linux-amd64
+            goos: linux
+            goarch: amd64
+          - target: linux-arm64
+            goos: linux
+            goarch: arm64
+          - target: linux-armv7
+            goos: linux
+            goarch: arm
+            goarm: '7'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21.x'
+
+      - name: Prepare
+        run: |
+          mkdir -p dist
+          go mod download
+
+      - name: Build (${{ matrix.target }})
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+        run: |
+          go build -trimpath -ldflags="-s -w" -o dist/rustdesk_install_${{ matrix.target }} ./cmd/rustdesk_install
+
+      - name: Package (${{ matrix.target }})
+        run: |
+          tar -czf dist/rustdesk_install_${{ matrix.target }}.tar.gz -C dist rustdesk_install_${{ matrix.target }}
+
+      - name: Upload Artifact (${{ matrix.target }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustdesk_install_${{ matrix.target }}
+          path: |
+            dist/rustdesk_install_${{ matrix.target }}
+            dist/rustdesk_install_${{ matrix.target }}.tar.gz
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push'
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set tag variables (tag push uses ref_name; main uses latest)
+        run: |
+          echo "REF=${{ github.ref }}" >> $GITHUB_ENV
+          echo "EVENT=${{ github.event_name }}" >> $GITHUB_ENV
+          echo "REF_NAME=${{ github.ref_name }}" >> $GITHUB_ENV
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "TAG=main-${{ github.sha }}" >> $GITHUB_ENV
+            echo "TITLE=Latest release" >> $GITHUB_ENV
+            echo "NOTES=Auto release for latest (main)" >> $GITHUB_ENV
+            echo "IS_MAIN=1" >> $GITHUB_ENV
+          else
+            echo "TAG=${{ github.ref_name }}" >> $GITHUB_ENV
+            echo "TITLE=${{ github.ref_name }}" >> $GITHUB_ENV
+            echo "NOTES=Auto release for ${{ github.ref_name }}" >> $GITHUB_ENV
+            echo "IS_MAIN=0" >> $GITHUB_ENV
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: rustdesk_install_*
+          merge-multiple: true
+          path: dist
+
+      - name: Create or update release (create draft then publish)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ env.TAG }}
+          TITLE: ${{ env.TITLE }}
+          NOTES: ${{ env.NOTES }}
+          IS_MAIN: ${{ env.IS_MAIN }}
+        run: |
+          gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1 && exists=1 || exists=0
+          if [ "$exists" = "1" ]; then
+            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" --repo "${{ github.repository }}" --draft=true
+          else
+            gh release create "$TAG" --title "$TITLE" --notes "$NOTES" --target ${{ github.sha }} --repo "${{ github.repository }}" --draft
+          fi
+
+      - name: Upload assets (overwrite if exists)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ env.TAG }}
+        run: |
+          ls -lah dist
+          gh release upload "$TAG" dist/* --clobber --repo "${{ github.repository }}"
+
+      - name: Publish release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ env.TAG }}
+          IS_MAIN: ${{ env.IS_MAIN }}
+        run: |
+          gh release edit "$TAG" --draft=false --repo "${{ github.repository }}"
